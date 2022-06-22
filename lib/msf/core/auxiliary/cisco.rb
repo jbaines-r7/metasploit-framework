@@ -17,7 +17,7 @@ module Msf
         0x55, 0x42
       ]
 
-      return nil if !(inp[0, 2] =~ /\d\d/)
+      return nil if inp[0, 2] !~ /\d\d/
 
       seed = nil
       clear = ''
@@ -34,7 +34,6 @@ module Msf
     end
 
     def cisco_ios_config_eater(thost, tport, config)
-
       if framework.db.active
         credential_data = {
           address: thost,
@@ -54,21 +53,22 @@ module Msf
         credential_data[:protocol] = 'udp'
       end
 
-      store_loot('cisco.ios.config', 'text/plain', thost, config.strip, 'config.txt', 'Cisco IOS Configuration')
+      store_loot('cisco.ios.config', 'text/plain', thost, config.strip, 'config.txt', 'Cisco Configuration')
 
       tuniface = nil
 
       host_info = {
-        host: thost,
-        os_name: 'Cisco IOS'
+        host: thost
       }
-      report_host(host_info)
 
       config.each_line do |line|
         case line
           #
           # Cover host details
           #
+        when /^ASA Version (.+)$/i
+          host_info[:os_flavor] = Regexp.last_match(1).to_s
+          report_host(host_info)
         when /^version (\d\d\.\d)/i
           host_info[:os_flavor] = Regexp.last_match(1).to_s
           report_host(host_info)
@@ -100,15 +100,18 @@ module Msf
             create_credential_and_login(cred) if framework.db.active
           when 7
             shash = begin
-                    cisco_ios_decrypt7(shash)
-                    rescue StandardError
-                      shash
-                  end
+              cisco_ios_decrypt7(shash)
+            rescue StandardError
+              shash
+            end
             print_good("#{thost}:#{tport} Decrypted Enable Password: #{shash}")
             cred[:private_data] = shash
             create_credential_and_login(cred) if framework.db.active
           end
 
+        when /^\s*enable password (.*) pbkdf2/i
+          encrypted_pass = Regexp.last_match(1).strip
+          print_good("PBKDF2 Encrypted Enable Password: #{encrypted_pass}")
         when /^\s*enable password (.*)/i
           spass = Regexp.last_match(1).strip
           print_good("#{thost}:#{tport} Unencrypted Enable Password: #{spass}")
@@ -129,20 +132,20 @@ module Msf
 
           cred = credential_data.dup
           cred[:access_level] = stype.upcase
-          cred[:protocol] = "udp"
+          cred[:protocol] = 'udp'
           cred[:port] = 161
           cred[:private_data] = scomm
           create_credential_and_login(cred)
-#
-# VTY Passwords
-#
+        #
+        # VTY Passwords
+        #
         when /^\s*password 7 ([^\s]+)/i
           spass = Regexp.last_match(1).strip
           spass = begin
-                  cisco_ios_decrypt7(spass)
-                  rescue StandardError
-                    spass
-                end
+            cisco_ios_decrypt7(spass)
+          rescue StandardError
+            spass
+          end
 
           print_good("#{thost}:#{tport} Decrypted VTY Password: #{spass}")
 
@@ -203,10 +206,10 @@ module Msf
             create_credential_and_login(cred) if framework.db.active
           when 7
             spass = begin
-                    cisco_ios_decrypt7(spass)
-                    rescue StandardError
-                      spass
-                  end
+              cisco_ios_decrypt7(spass)
+            rescue StandardError
+              spass
+            end
             print_good("#{thost}:#{tport} Wireless WPA-PSK Decrypted Password: #{spass}")
             cred[:private_data] = spass
             create_credential_and_login(cred) if framework.db.active
@@ -259,7 +262,6 @@ module Msf
           #
         when /^\s*username ([^\s]+) privilege (\d+) (secret|password) (\d+) ([^\s]+)/i
           user = Regexp.last_match(1)
-          priv = Regexp.last_match(2)
           stype = Regexp.last_match(4).to_i
           spass = Regexp.last_match(5)
 
@@ -282,19 +284,25 @@ module Msf
             create_credential_and_login(cred) if framework.db.active
           when 7
             spass = begin
-                    cisco_ios_decrypt7(spass)
-                    rescue StandardError
-                      spass
-                  end
+              cisco_ios_decrypt7(spass)
+            rescue StandardError
+              spass
+            end
             print_good("#{thost}:#{tport} Username '#{user}' with Decrypted Password: #{spass}")
             cred[:private_data] = spass
             create_credential_and_login(cred) if framework.db.active
           end
 
-          # This regex captures ephones from Cisco Unified Communications Manager Express (CUE) which come in forms like:
-          # username "phonefour" password 444444
-          # username test password test
-          # This is used for the voicemail system
+        # username user1 password $sha512$5000$xp2KZlKMsT2TkdsiBtD+Og==$BQs5hpnsMVOWSO2+0bYZBw== pbkdf2 privilege 0
+        when /^\s*username ([^\s]+) password ([^\s]+) pbkdf2( privilege \d+)?/i
+          user = Regexp.last_match(1)
+          epass = Regexp.last_match(2)
+          print_good("#{thost}:#{tport} Username '#{user}' with PBKDF2 Encrypted Password: #{epass}")
+
+        # This regex captures ephones from Cisco Unified Communications Manager Express (CUE) which come in forms like:
+        # username "phonefour" password 444444
+        # username test password test
+        # This is used for the voicemail system
         when /^\s*username "?([\da-z]+)"? password ([^\s]+)/i
           user = Regexp.last_match(1)
           spass = Regexp.last_match(2)
@@ -330,10 +338,10 @@ module Msf
             create_credential_and_login(cred) if framework.db.active
           when 7
             spass = begin
-                    cisco_ios_decrypt7(spass)
-                    rescue StandardError
-                      spass
-                  end
+              cisco_ios_decrypt7(spass)
+            rescue StandardError
+              spass
+            end
             print_good("#{thost}:#{tport} Username '#{user}' with Decrypted Password: #{spass}")
             cred[:private_data] = spass
             create_credential_and_login(cred) if framework.db.active
@@ -390,10 +398,10 @@ module Msf
             create_credential_and_login(cred) if framework.db.active
           when 7
             spass = begin
-                    cisco_ios_decrypt7(spass)
-                    rescue StandardError
-                      spass
-                  end
+              cisco_ios_decrypt7(spass)
+            rescue StandardError
+              spass
+            end
             print_good("#{thost}:#{tport} PPP Username: #{suser} Decrypted Password: #{spass}")
             cred[:private_data] = spass
             create_credential_and_login(cred) if framework.db.active
@@ -421,10 +429,10 @@ module Msf
             create_credential_and_login(cred) if framework.db.active
           when 7
             spass = begin
-                    cisco_ios_decrypt7(spass)
-                    rescue StandardError
-                      spass
-                  end
+              cisco_ios_decrypt7(spass)
+            rescue StandardError
+              spass
+            end
             print_good("#{thost}:#{tport} PPP Decrypted Password: #{spass}")
             cred[:private_data] = spass
             create_credential_and_login(cred) if framework.db.active
